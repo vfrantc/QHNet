@@ -14,17 +14,16 @@ from warmup_scheduler import GradualWarmupScheduler
 from losses import PSNRLoss
 from model import QHNet
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
 torch.backends.cudnn.benchmark = True
 random.seed(1234)
 np.random.seed(1234)
 torch.manual_seed(1234)
 torch.cuda.manual_seed_all(1234)
-start_epoch = 1
+
 
 
 def train(args):
+    start_epoch = 1
     utils.mkdir(args.model_dir)
 
     model = QHNet(base_channels=48, enc_blocks=[4, 4, 8, 8], dec_blocks=[2, 2, 2, 2]).cuda()
@@ -192,7 +191,6 @@ if __name__ == "__main__":
     parser.add_argument('--clip_grad', type=float, default=1.0, help='gradient clipping value')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision')
     parser.add_argument('--num_workers', type=int, default=2, help='number of workers for data loading')
-    parser.add_argument('--cuda_visible_devices', type=str, default='0', help='CUDA visible devices')
     parser.add_argument('--resume', action='store_true', help='resume training from last checkpoint')
     parser.add_argument('--pretrain', action='store_true', help='use pre-trained weights')
     parser.add_argument('--model_pre_dir', type=str, default='./weights/ESDNet.pth',
