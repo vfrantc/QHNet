@@ -15,7 +15,7 @@ class SoftThresholding(nn.Module):
         return torch.sign(x) * torch.maximum(torch.abs(x) - self.T.to(x.device), torch.tensor(0.0, device=x.device))
 
 class PolynomialThresholding(nn.Module):
-    def __init__(self, in_channels, a_poly=[0.707,	0.014,	-0.008,	0.999,	0.940]):
+    def __init__(self, in_channels, a_poly=[0.707, 0.014, -0.008, 0.999, 0.940]):
         super().__init__()
         self.N = len(a_poly)
         self.a_poly = torch.tensor(a_poly, dtype=torch.float32)
@@ -42,7 +42,6 @@ class PolynomialThresholding(nn.Module):
 
         new_coeffs = torch.matmul(f_x, self.a_poly.to(x.device))
         return new_coeffs.view(B, C, H, W)
-
 
 class WHTConv2D(torch.nn.Module):
     def __init__(self, in_channels, out_channels, pods=1, residual=True, poly=False):
@@ -84,13 +83,77 @@ class WHTConv2D(torch.nn.Module):
             y = y + x
         return y
 
-class QuaternionChannelAttention(nn.Module):
-    def __init__(self, channels, reduction_ratio):
-        super(QuaternionChannelAttention, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1) # compressed feature
-        self.conv1 = QuaternionConv(channels, channels // reduction_ratio, kernel_size=1, stride=1, padding=0, bias=True)
-        self.relu = nn.ReLU(inplace=True) # squeezed quaternion weights
-        self.conv2 = QuaternionConv(channels // reduction_ratio, channels, kernel_size=1, stride=1, padding=0, bias=True)
+class ResBlock(nn.Module):
+    def __init__(self, channels, mode='QHNet'):
+        super(ResBlock, self).__init__()
+        if mode == 'QHNet':
+            self.residual_layers = nn.Sequential(
+                nn.ReLU(inplace=True),
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels),
+                nn.ReLU(inplace=True),
+                WHTConv2D(channels, channels, pods=1, residual=False, poly=True),
+                nn.BatchNorm2d(channels)
+            )
+            self.shortcut = nn.Sequential(
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels)
+            )
+        elif mode == 'Real':
+            self.residual_layers = nn.Sequential(
+                nn.ReLU(inplace=True),
+                nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels)
+            )
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels)
+            )
+        elif mode == 'No-WHT':
+            self.residual_layers = nn.Sequential(
+                nn.ReLU(inplace=True),
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels),
+                nn.ReLU(inplace=True),
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels)
+            )
+            self.shortcut = nn.Sequential(
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels)
+            )
+        if mode == 'QHNet':
+            self.attention = nn.Sequential(
+                QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels),
+                nn.Sigmoid()
+            )
+        else:
+            self.attention = nn.Sequential(
+                nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(channels),
+                nn.Sigmoid()
+            )
+
+    def forward(self, x):
+        shortcut = x.clone()
+        out = self.residual_layers(x) + self.shortcut(x)
+        return self.attention(out) + shortcut
+
+class ChannelAttention(nn.Module):
+    def __init__(self, channels, reduction_ratio, mode='QHNet'):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        if mode == 'QHNet':
+            self.conv1 = QuaternionConv(channels, channels // reduction_ratio, kernel_size=1, stride=1, padding=0, bias=True)
+            self.conv2 = QuaternionConv(channels // reduction_ratio, channels, kernel_size=1, stride=1, padding=0, bias=True)
+        else:
+            self.conv1 = nn.Conv2d(channels, channels // reduction_ratio, kernel_size=1, stride=1, padding=0, bias=True)
+            self.conv2 = nn.Conv2d(channels // reduction_ratio, channels, kernel_size=1, stride=1, padding=0, bias=True)
+        self.relu = nn.ReLU(inplace=True)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -100,13 +163,18 @@ class QuaternionChannelAttention(nn.Module):
         avg_out = self.conv2(avg_out)
         return self.sigmoid(avg_out)
 
-class QuaternionSpatialAttention(nn.Module):
-    def __init__(self, channels):
-        super(QuaternionSpatialAttention, self).__init__()
-        self.conv1 = QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1)
-        self.conv2 = QuaternionConv(channels, channels // 8, kernel_size=3, stride=1, padding=1)
+class SpatialAttention(nn.Module):
+    def __init__(self, channels, mode='QHNet'):
+        super(SpatialAttention, self).__init__()
+        if mode == 'QHNet':
+            self.conv1 = QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1)
+            self.conv2 = QuaternionConv(channels, channels // 8, kernel_size=3, stride=1, padding=1)
+            self.conv3 = QuaternionConv(channels // 8, channels, kernel_size=3, stride=1, padding=1)
+        else:
+            self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1)
+            self.conv2 = nn.Conv2d(channels, channels // 8, kernel_size=3, stride=1, padding=1)
+            self.conv3 = nn.Conv2d(channels // 8, channels, kernel_size=3, stride=1, padding=1)
         self.relu = nn.ReLU(inplace=True)
-        self.conv3 = QuaternionConv(channels // 8, channels, kernel_size=3, stride=1, padding=1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -116,18 +184,16 @@ class QuaternionSpatialAttention(nn.Module):
         x = self.conv3(x)
         return self.sigmoid(x)
 
-class QuaternionAttentionBlock(nn.Module):
-    def __init__(self, channels, reduction_ratio):
-        super(QuaternionAttentionBlock, self).__init__()
-        self.channel_attention = QuaternionChannelAttention(channels, reduction_ratio)
-        self.spatial_attention = QuaternionSpatialAttention(channels)
+class AttentionBlock(nn.Module):
+    def __init__(self, channels, reduction_ratio, mode='QHNet'):
+        super(AttentionBlock, self).__init__()
+        self.channel_attention = ChannelAttention(channels, reduction_ratio, mode=mode)
+        self.spatial_attention = SpatialAttention(channels, mode=mode)
 
     def forward(self, x):
         ca = self.channel_attention(x)
         sa = self.spatial_attention(x)
-        # this is an important thing!!!! maybe I could replace it with quaternion multiplication
         return torch.mul((1 - sa), ca) + torch.mul(sa, x)
-
 
 class PatchEmbedding(nn.Module):
     def __init__(self, in_channels=3, out_channels=32, bias=False):
@@ -136,33 +202,6 @@ class PatchEmbedding(nn.Module):
 
     def forward(self, x):
         return self.projection(x)
-
-
-class ResBlock(nn.Module):
-    def __init__(self, channels):
-        super(ResBlock, self).__init__()
-        self.residual_layers = nn.Sequential(
-            nn.ReLU(inplace=True),
-            QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
-            WHTConv2D(channels, channels, pods=1, residual=False, poly=True),
-            nn.BatchNorm2d(channels)
-        )
-        self.shortcut = nn.Sequential(
-            QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(channels)
-        )
-        self.attention = nn.Sequential(
-            QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(channels),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        shortcut = x.clone()
-        out = self.residual_layers(x) + self.shortcut(x)
-        return self.attention(out) + shortcut
 
 class Downsample(nn.Module):
     def __init__(self, channels):
@@ -187,40 +226,39 @@ class Upsample(nn.Module):
         )
 
     def forward(self, x):
-        #temp = torch.zeros((x.shape[0], x.shape[1], x.shape[2] * self.scale_factor, x.shape[3] * self.scale_factor)).cuda()
-        #output = [F.interpolate(x[i], scale_factor=self.scale_factor, mode='bilinear') for i in range(x.shape[0])]
-        #out = torch.stack(output, dim=0)
         out = F.interpolate(x, scale_factor=self.scale_factor, mode='bilinear')
         return self.layers(out)
 
 class QHNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=3, base_channels=24, enc_blocks=[4, 4, 6, 6], dec_blocks=[4, 4, 6, 6], bias=False):
+    def __init__(self, in_channels=3, out_channels=3, base_channels=24, enc_blocks=[4, 4, 6, 6], dec_blocks=[4, 4, 6, 6], mode='QHNet', bias=False):
         super(QHNet, self).__init__()
+        self.mode = mode
 
         self.patch_embedding = PatchEmbedding(in_channels=in_channels, out_channels=base_channels)
-        self.encoder1 = nn.Sequential(*[ResBlock(channels=int(base_channels * 1)) for _ in range(enc_blocks[0])])
+        self.encoder1 = nn.Sequential(*[ResBlock(channels=int(base_channels * 1), mode=self.mode) for _ in range(enc_blocks[0])])
 
-        self.downsample1 = Downsample(base_channels)  # From Level 1 to Level 2
-        self.encoder2 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1)) for _ in range(enc_blocks[1])])
+        self.downsample1 = Downsample(base_channels)
+        self.encoder2 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1), mode=self.mode) for _ in range(enc_blocks[1])])
 
-        self.downsample2 = Downsample(int(base_channels * 2 ** 1))  # From Level 2 to Level 3
-        self.encoder3 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 2)) for _ in range(enc_blocks[2])])
+        self.downsample2 = Downsample(int(base_channels * 2 ** 1))
+        self.encoder3 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 2), mode=self.mode) for _ in range(enc_blocks[2])])
 
-        self.decoder3 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 2)) for _ in range(dec_blocks[2])])
+        self.decoder3 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 2), mode=self.mode) for _ in range(dec_blocks[2])])
 
-        self.upsample2 = Upsample(int(base_channels * 2 ** 2))  # From Level 3 to Level 2
+        self.upsample2 = Upsample(int(base_channels * 2 ** 2))
         self.reduce_channels2 = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Conv2d(int(base_channels * 2 ** 2), int(base_channels * 2 ** 1), kernel_size=1, bias=bias),
             nn.BatchNorm2d(int(base_channels * 2 ** 1))
         )
 
-        self.decoder2 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1)) for _ in range(dec_blocks[1])])
+        self.decoder2 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1), mode=self.mode) for _ in range(dec_blocks[1])])
 
-        self.upsample1 = Upsample(int(base_channels * 2 ** 1))  # From Level 2 to Level 1
-        self.decoder1 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1)) for _ in range(dec_blocks[0])])
+        self.upsample1 = Upsample(int(base_channels * 2 ** 1))
+        self.decoder1 = nn.Sequential(*[ResBlock(channels=int(base_channels * 2 ** 1), mode=self.mode) for _ in range(dec_blocks[0])])
 
-        self.refinement = QuaternionAttentionBlock(channels=int(base_channels * 2 ** 1), reduction_ratio=8)
+        if self.mode != 'No-Refinement':
+            self.refinement = AttentionBlock(channels=int(base_channels * 2 ** 1), reduction_ratio=8, mode=self.mode)
 
         self.output = nn.Sequential(
             nn.Conv2d(in_channels=int(base_channels * 2 ** 1), out_channels=out_channels, kernel_size=3, stride=1, padding=1)
@@ -248,7 +286,9 @@ class QHNet(nn.Module):
         dec1 = torch.cat([dec1, enc1_out], dim=1)
         dec1_out = self.decoder1(dec1)
 
-        refined = self.refinement(dec1_out)
-        output = self.output(refined) + shortcut
+        if self.mode != 'No-Refinement':
+            refined = self.refinement(dec1_out)
+            output = self.output(refined) + shortcut
+        else:
+            output = self.output(dec1_out) + shortcut
         return output
-

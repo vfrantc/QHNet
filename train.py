@@ -26,7 +26,7 @@ def train(args):
     start_epoch = 1
     utils.mkdir(args.model_dir)
 
-    model = QHNet(base_channels=48, enc_blocks=[4, 4, 8, 8], dec_blocks=[2, 2, 2, 2]).cuda()
+    model = QHNet(base_channels=48, enc_blocks=[4, 4, 8, 8], dec_blocks=[2, 2, 2, 2], mode=args.mode).cuda()
 
     ######### Model ###########
     model_restoration = model
