@@ -5,26 +5,19 @@
 # ORKIS, Aix-en-provence
 # October 2018
 ##########################################################
+import sys
+import math
 
-import numpy                   as np
-from   numpy.random            import RandomState
+import numpy as np
+from   numpy.random import RandomState
+
 import torch
-from   torch.autograd           import Variable
-import torch.nn.functional      as F
-import torch.nn                 as nn
+from   torch.autograd import Variable
+import torch.nn.functional as F
+import torch.nn as nn
 from   torch.nn.parameter       import Parameter
 from   torch.nn                 import Module
-from   .quaternion_ops          import *
-import math
-import sys
 
-import torch
-import torch.nn as nn
-from torch.autograd import Variable
-import torch.nn.functional as F
-import numpy as np
-from numpy.random import RandomState
-import sys
 import pdb
 from scipy.stats import chi
 
