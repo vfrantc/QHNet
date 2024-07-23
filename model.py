@@ -82,11 +82,11 @@ class WHTConv2D(torch.nn.Module):
         if self.residual:
             y = y + x
         return y
-
 class ResBlock(nn.Module):
     def __init__(self, channels, mode='QHNet'):
         super(ResBlock, self).__init__()
-        if mode == 'QHNet':
+        self.mode = mode
+        if mode in ['QHNet', 'No-Attention', 'No-Polynomial']:
             self.residual_layers = nn.Sequential(
                 nn.ReLU(inplace=True),
                 QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
@@ -125,7 +125,8 @@ class ResBlock(nn.Module):
                 QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
                 nn.BatchNorm2d(channels)
             )
-        if mode == 'QHNet':
+
+        if mode != 'Real':
             self.attention = nn.Sequential(
                 QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),
                 nn.BatchNorm2d(channels),
@@ -141,7 +142,10 @@ class ResBlock(nn.Module):
     def forward(self, x):
         shortcut = x.clone()
         out = self.residual_layers(x) + self.shortcut(x)
-        return self.attention(out) + shortcut
+        if self.mode == 'No-Attention':
+            return out + shortcut
+        else:
+            return self.attention(out) + shortcut
 
 class ChannelAttention(nn.Module):
     def __init__(self, channels, reduction_ratio, mode='QHNet'):
