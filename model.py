@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 from hadamard import fwht, ifwht, find_min_power
 from quaternion import QuaternionConv
 
