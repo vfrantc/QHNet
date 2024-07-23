@@ -151,7 +151,7 @@ class ChannelAttention(nn.Module):
     def __init__(self, channels, reduction_ratio, mode='QHNet'):
         super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        if mode == 'QHNet':
+        if mode in ['QHNet', 'No-WHT', 'No-Attention', 'No-Polynomial', 'No-Refinement']:
             self.conv1 = QuaternionConv(channels, channels // reduction_ratio, kernel_size=1, stride=1, padding=0, bias=True)
             self.conv2 = QuaternionConv(channels // reduction_ratio, channels, kernel_size=1, stride=1, padding=0, bias=True)
         else:
@@ -170,7 +170,7 @@ class ChannelAttention(nn.Module):
 class SpatialAttention(nn.Module):
     def __init__(self, channels, mode='QHNet'):
         super(SpatialAttention, self).__init__()
-        if mode == 'QHNet':
+        if mode in ['QHNet', 'No-WHT', 'No-Attention', 'No-Polynomial', 'No-Refinement']:
             self.conv1 = QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1)
             self.conv2 = QuaternionConv(channels, channels // 8, kernel_size=3, stride=1, padding=1)
             self.conv3 = QuaternionConv(channels // 8, channels, kernel_size=3, stride=1, padding=1)
