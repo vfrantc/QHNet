@@ -76,7 +76,7 @@ class TrainValDataset(Dataset):
         self.name = name
         self.root_dir = os.path.join(data_dir, self.name)
         self.root_dir_rain = os.path.join(self.root_dir, "input")
-        self.root_dir_label = os.path.join(self.root_dir, "target")
+        self.root_dir_label = os.path.join(self.root_dir, "gt")
 
         self.mat_files_rain = sorted(os.listdir(self.root_dir_rain))
         self.mat_files_label = sorted(os.listdir(self.root_dir_label))
