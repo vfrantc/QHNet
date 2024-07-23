@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from hadamard import fwht, ifwht
+from hadamard import fwht, ifwht, find_min_power
 from quaternion import QuaternionConv
 
 class SoftThresholding(nn.Module):
