@@ -87,6 +87,9 @@ class ResBlock(nn.Module):
         super(ResBlock, self).__init__()
         self.mode = mode
         if mode in ['QHNet', 'No-Attention', 'No-Polynomial', 'No-Refinement']:
+            poly = True
+            if mode == 'No-Polynomial':
+                poly = False
             self.residual_layers = nn.Sequential(
                 nn.ReLU(inplace=True),
                 QuaternionConv(channels, channels, kernel_size=3, stride=1, padding=1, bias=False),

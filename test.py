@@ -14,7 +14,7 @@ def main(args):
 
     torch.backends.cudnn.benchmark = True
 
-    model = QHNet(base_channels=48, enc_blocks=[4, 4, 8, 8], dec_blocks=[2, 2, 2, 2]).cuda()
+    model = QHNet(base_channels=48, enc_blocks=[4, 4, 8, 8], dec_blocks=[2, 2, 2, 2], mode=args.mode).cuda()
     model.load_state_dict(torch.load(args.model_path))
     model.cuda()
     model.eval()
@@ -51,6 +51,7 @@ if __name__ == "__main__":
     parser.add_argument('--patch_size', type=int, default=64, help='patch size for testing')
     parser.add_argument('--batch_size', type=int, default=12, help='batch size for testing')
     parser.add_argument('--cuda_visible_devices', type=str, default='0', help='CUDA visible devices')
+    parser.add_argument('--mode', type=str, default='QHNet', help='model mode')
 
     args = parser.parse_args()
     main(args)
